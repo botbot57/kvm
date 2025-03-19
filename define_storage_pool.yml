@@ -1,0 +1,14 @@
+---
+- name: Create storage pool
+  become: yes
+  hosts: all
+  tasks:
+    - name: Define and start LVM storage pool
+      community.libvirt.virt_pool:
+        name: my_lvm_pool
+        state: present
+        type: logical
+        source: vg_name  # Tên volume group (vg) đã tạo trước
+        target: /dev/vg_name
+        autostart: yes
+      become: yes

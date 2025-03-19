@@ -1,0 +1,55 @@
+---
+- name: Create a KVM Virtual Machine
+  hosts: all
+  vars:
+    vm_name: my_new_vm
+    vm_memory: 1024  # MB
+    vm_vcpus: 1
+    vm_disk_size: 20  # GB
+    vm_iso_path: /var/lib/libvirt/images/CentOS-7-x86_64-Minimal-2009.iso
+    pool_name: poolvm
+    pool_path: /
+
+  tasks:
+    # Tạo thư mục cho storage pool
+    - name: Ensure storage pool directory exists
+      ansible.builtin.file:
+        path: "{{ pool_path }}"
+        state: directory
+        owner: qemu
+        group: qemu
+        mode: '0755'
+      become: yes
+
+    # Tạo storage pool
+#    - name: Define and start storage pool
+#      community.libvirt.virt_pool:
+#        name: "{{ pool_name }}"
+#        state: present
+#        type: dir
+#        target: "{{ pool_path }}"
+#        autostart: yes
+#      become: yes
+
+    # Tạo disk cho VM
+    - name: Create VM disk
+      ansible.builtin.command:
+        cmd: "qemu-img create -f qcow2 {{ pool_path }}/{{ vm_name }}.qcow2 {{ vm_disk_size }}G"
+        creates: "{{ pool_path }}/{{ vm_name }}.qcow2"
+      become: yes
+
+    # Tạo và khởi động VM
+    - name: Create VM
+      community.libvirt.virt:
+ #       name: "{{ vm_name }}"
+#        state: present
+#        memory: "{{ vm_memory }}"
+#        vcpus: "{{ vm_vcpus }}"
+        command: define
+        xml: "{{ lookup('template', 'vm_template.j2') }}"
+      become: yes
+    - name: Start vm
+      community.libvirt.virt:
+        name: "{{ vm_name }}"
+        state: running
+   
