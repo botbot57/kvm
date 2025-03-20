@@ -1,0 +1,62 @@
+- name: Check Disk Capacity of VMs in KVM
+  hosts: all
+  gather_facts: no
+  tasks:
+    - name: Get list of all VMs
+      command: virsh list --all --name
+      register: vms
+
+    - name: Get list of disks for each VM
+      command: "virsh domblklist {{ item }} --details"
+      with_items: "{{ vms.stdout_lines }}"
+      register: disk_list
+      ignore_errors: yes 
+
+    - name: Extract disk names from domblklist output
+      set_fact:
+#        vm_disks: "{{ vm_disks | default({}) | combine({item.item: item.stdout_lines | select('match', '^\\s*file') | map('split', ' ') | map('last') | list }) }}"
+#         vm_disks: "{{ vm_disks | default({}) | combine({item.item: item.stdout_lines | reject('search', 'cdrom') | map('split', ' ') | map('last') | list }) }}"
+#        vm_disks: "{{ vm_disks | default({}) | combine({item.item: item.stdout_lines | reject('search', 'cdrom') | skip(2) | map('split', ' ') | map('last') | list }) }}"
+        vm_disks: "{{ vm_disks | default({}) | combine({ 
+                      item.item: item.stdout_lines[2:] 
+                                  | reject('search', 'cdrom') 
+                                  | map('split', ' ') 
+                                  | map('last') 
+                                  | list 
+                   }) }}"
+      with_items: "{{ disk_list.results }}"
+      ignore_errors: yes
+
+
+    - name: Debug extracted disk names
+      debug:
+        msg: "{{ vm_disks }}"
+
+#    - name: Get disk info for each disk
+#      command: "virsh domblkinfo {{ item.0 }} {{ item.1 }}"
+#      with_subelements:
+#        - "{{ vm_disks | dict2items }}"
+#        - value
+#      register: disk_info
+#      ignore_errors: yes
+
+    - name: Get disk info for each disk
+      command: "virsh domblkinfo {{ item.0.key }} {{ item.1 }}"
+      with_subelements:
+        - "{{ vm_disks | dict2items }}"
+        - value
+      register: disk_info
+      ignore_errors: yes
+
+
+    - name: Extract and display VM name and capacity
+      debug:
+        msg: "{{ item.cmd[2] }} - Capacity: {{ item.stdout_lines | select('search', '^Capacity') | map('split', ' ') | map('last') | list | first }}"
+      with_items: "{{ disk_info.results }}"
+      ignore_errors: yes
+
+    - name: Display disk capacity info
+      debug:
+        msg: "{{ item.stdout_lines }}"
+      with_items: "{{ disk_info.results }}"
+
