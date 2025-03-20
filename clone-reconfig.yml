@@ -1,0 +1,61 @@
+- name: Clone VM and Set Static IP with VLAN
+  hosts: all
+  vars:
+    original_vm: "my_new_vm"
+    cloned_vm: "cloned_vm"
+    disk_path: "/poolvm/{{ cloned_vm }}.qcow2"
+    ip_address: "192.168.1.100"
+    netmask: "255.255.255.0"
+    gateway: "192.168.1.1"
+    dns: "8.8.8.8"
+    vlan_id: "100"
+    new_ram: "2G"  
+    new_vcpus: 2    
+    new_bridge: "test" 
+    new_mac: "52:54:00:12:34:56"  
+    new_disk_size: "25G"
+
+  tasks:
+    - name: Clone VM using virt-clone
+      command: >
+        virt-clone --original {{ original_vm }} --name {{ cloned_vm }}
+        --file {{ disk_path }}
+      register: clone_result
+
+    - name: Resize the disk image
+      command: qemu-img resize {{ disk_path }} {{ new_disk_size }}
+
+#    - name: Ensure VM is shut down before modifying disk
+#      command: virsh shutdown {{ cloned_vm }}
+#      when: clone_result.changed
+    - name: Change RAM
+      command: virsh setmem {{ cloned_vm }} {{ new_ram }} --config
+
+    - name: Change CPU count
+      command: virsh setvcpus {{ cloned_vm }} {{ new_vcpus }} --config
+
+    - name: Detach old network interface
+      command: virsh detach-interface {{ cloned_vm }} network --persistent
+      ignore_errors: yes
+
+    - name: Attach new network interface
+      command: >
+        virsh attach-interface {{ cloned_vm }} network {{ new_bridge }} --model virtio  --persistent
+
+    - name: Wait for VM to shut down
+      command: sleep 5
+      when: clone_result.changed
+#
+    - name: Configure VLAN and Static IP (RHEL/CentOS)
+      command: >
+        virt-customize -a {{ disk_path }} --run-command
+        "echo -e 'DEVICE=eth0.{{ vlan_id }}\nBOOTPROTO=none\nONBOOT=yes\nVLAN=yes\nIPADDR={{ ip_address }}\nNETMASK={{ netmask }}\nGATEWAY={{ gateway }}\nDNS1={{ dns }}' > /etc/sysconfig/network-scripts/ifcfg-eth0.{{ vlan_id }}"
+
+#    - name: Configure VLAN and Static IP (Ubuntu/Debian)
+#      command: >
+#        virt-customize -a {{ disk_path }} --run-command
+#        "echo -e 'network:\n  ethernets:\n    eth0:\n      dhcp4: no\n      set-name: eth0\n  vlans:\n    eth0.{{ vlan_id }}:\n      id: {{ vlan_id }}\n      link: eth0\n      addresses:\n        - {{ ip_address }}/24\n      gateway4: {{ gateway }}\n      nameservers:\n        addresses:\n          - {{ dns }}\n  version: 2' > /etc/netplan/50-cloud-init.yaml"
+
+    - name: Start cloned VM
+      command: virsh start {{ cloned_vm }}
+
