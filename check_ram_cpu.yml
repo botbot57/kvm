@@ -1,0 +1,32 @@
+- name: Check CPU and RAM of VMs in KVM
+  hosts: all
+  become: yes
+  tasks:
+    - name: Lấy danh sách VM đang chạy
+      command: virsh list --all --name
+      register: vm_list_raw
+
+    - name: Lọc danh sách VM (loại bỏ dòng trống)
+      set_fact:
+        vm_list: "{{ vm_list_raw.stdout_lines | select('match', '^.+$') | list }}"
+
+    - name: Lấy thông tin CPU và RAM từng VM
+      command: virsh dominfo {{ item }}
+      register: vm_info
+      loop: "{{ vm_list }}"
+
+    - name: Trích xuất CPU và RAM từ kết quả
+      set_fact:
+        vm_specs: >-
+          {{ vm_specs | default({}) | combine({
+              item.item: {
+                'CPU': (item.stdout_lines | select('search', '^CPU') | first | split(':') | last | trim),
+                'RAM': (item.stdout_lines | select('search', '^Used memory') | first | split(':') | last | trim)
+              }
+            }) }}
+      loop: "{{ vm_info.results }}"
+
+    - name: Hiển thị thông tin CPU và RAM của VM
+      debug:
+        var: vm_specs
+

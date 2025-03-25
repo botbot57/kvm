@@ -1,0 +1,56 @@
+---
+- name: Check storage capacity in KVM
+  become: yes
+  hosts: all
+  tasks:
+    - name: Lấy danh sách Storage Pools
+      command: virsh pool-list --all --name
+      register: pool_list_raw
+
+    - name: Chuẩn hóa danh sách Storage Pool
+      set_fact:
+        pool_list_clean: "{{ pool_list_raw.stdout_lines | map('trim') | list }}"
+    - name: Khởi tạo dictionary để lưu thông tin các pool
+      set_fact:
+        storage_pools: {}
+
+
+    - name: Lấy danh sách Volumes cho từng Storage Pool
+      command: virsh vol-list {{ item }}
+      register: volume_list_raw
+      loop: "{{ pool_list_clean }}"
+
+    - name: Lặp qua từng pool và lấy danh sách volume
+      set_fact:
+        storage_pools: >-
+          {{ storage_pools | default({}) | combine(
+              { item.item | trim:
+                item.stdout_lines[2:] 
+                | map('split', ' ') 
+                | map('first') 
+                | map('trim') 
+                | list
+              }
+            ) 
+          }}
+      when: item.stdout_lines | length > 2
+      loop: "{{ volume_list_raw.results }}"
+
+
+    - name: Display storage pools and their volumes
+      debug:
+        var: storage_pools
+
+    - name: Lấy dung lượng từng volume
+      command: virsh vol-info --pool {{ item.0 }} --vol {{ item.1 }} | grep Capacity | awk '{print $2}'
+      register: volume_capacity
+      loop: "{{ query('subelements', storage_pools, 'value') }}"
+
+    - name: Tính tổng dung lượng
+      set_fact:
+        total_capacity: "{{ volume_capacity.results | map(attribute='stdout') | map('regex_replace', 'G$', '') | map('float') | sum }}"
+
+    - name: Hiển thị tổng dung lượng của tất cả volumes
+      debug:
+        msg: "Tổng dung lượng của tất cả volumes là {{ total_capacity }} GB"
+
